@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { CreditCard, Truck, Lock, CheckCircle } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const CheckoutPage: React.FC = () => {
   const { items, getTotalPrice, clearCart } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
-  
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const [shippingInfo, setShippingInfo] = useState({
-    fullName: user?.firstName + ' ' + user?.lastName || '',
+    fullName: (user?.firstName ? `${user.firstName} ${user?.lastName ?? ''}`.trim() : '') || '',
     email: user?.email || '',
     phone: user?.phone || '',
     address: user?.address || '',
@@ -35,18 +39,46 @@ const CheckoutPage: React.FC = () => {
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
+    setErrorMsg(null);
 
-    // Simulate payment processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Build payload expected by your /api/orders POST
+      const payload = {
+        user: (user as any)?._id || null, // keep null if your schema made 'user' optional
+        items: items.map(it => ({
+          productId: it.id,
+          name: it.name,
+          image: it.image,
+          category: it.category,
+          price: it.price,
+          quantity: it.quantity
+        })),
+        shippingInfo,
+        paymentMethod,
+        totalPrice: total
+      };
 
-    setOrderComplete(true);
-    clearCart();
-    setIsProcessing(false);
+      const res = await axios.post(`${API_BASE}/api/orders`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        withCredentials: false
+      });
 
-    // Redirect to dashboard after 3 seconds
-    setTimeout(() => {
-      navigate('/dashboard');
-    }, 3000);
+      // Success → show success UI, clear cart, redirect
+      console.log('Order saved:', res.data);
+      setOrderComplete(true);
+      clearCart();
+      setTimeout(() => navigate('/dashboard'), 3000);
+    } catch (err: any) {
+      const apiMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Failed to place order.';
+      setErrorMsg(apiMsg);
+      console.error('Order failed:', err?.response?.data || err);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (orderComplete) {
@@ -78,6 +110,12 @@ const CheckoutPage: React.FC = () => {
           <p className="text-gray-600">Complete your purchase securely</p>
         </div>
 
+        {errorMsg && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+            {errorMsg}
+          </div>
+        )}
+
         <form onSubmit={handlePlaceOrder}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Checkout Form */}
@@ -88,12 +126,10 @@ const CheckoutPage: React.FC = () => {
                   <Truck className="h-5 w-5 mr-2 text-blue-600" />
                   Shipping Information
                 </h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Full Name
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
                     <input
                       type="text"
                       value={shippingInfo.fullName}
@@ -104,9 +140,7 @@ const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email Address
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                     <input
                       type="email"
                       value={shippingInfo.email}
@@ -117,9 +151,7 @@ const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Phone Number
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                     <input
                       type="tel"
                       value={shippingInfo.phone}
@@ -130,9 +162,7 @@ const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      City
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
                     <input
                       type="text"
                       value={shippingInfo.city}
@@ -143,9 +173,7 @@ const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Address
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
                     <textarea
                       value={shippingInfo.address}
                       onChange={(e) => setShippingInfo({ ...shippingInfo, address: e.target.value })}
@@ -156,9 +184,7 @@ const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Postal Code
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Postal Code</label>
                     <input
                       type="text"
                       value={shippingInfo.postalCode}
@@ -185,7 +211,7 @@ const CheckoutPage: React.FC = () => {
                       name="payment"
                       value="card"
                       checked={paymentMethod === 'card'}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      onChange={(e) => setPaymentMethod(e.target.value as 'card')}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                     />
                     <label htmlFor="card" className="flex-1 flex items-center justify-between">
@@ -204,7 +230,7 @@ const CheckoutPage: React.FC = () => {
                       name="payment"
                       value="cash"
                       checked={paymentMethod === 'cash'}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      onChange={(e) => setPaymentMethod(e.target.value as 'cash')}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                     />
                     <label htmlFor="cash" className="flex-1">
@@ -214,32 +240,27 @@ const CheckoutPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Card Details */}
                 {paymentMethod === 'card' && (
                   <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Cardholder Name
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
                       <input
                         type="text"
                         value={cardInfo.cardholderName}
                         onChange={(e) => setCardInfo({ ...cardInfo, cardholderName: e.target.value })}
-                        required={paymentMethod === 'card'}
+                        required
                         className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Name on card"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Card Number
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
                       <input
                         type="text"
                         value={cardInfo.cardNumber}
                         onChange={(e) => setCardInfo({ ...cardInfo, cardNumber: e.target.value })}
-                        required={paymentMethod === 'card'}
+                        required
                         className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="1234 5678 9012 3456"
                       />
@@ -247,28 +268,24 @@ const CheckoutPage: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Expiry Date
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
                         <input
                           type="text"
                           value={cardInfo.expiryDate}
                           onChange={(e) => setCardInfo({ ...cardInfo, expiryDate: e.target.value })}
-                          required={paymentMethod === 'card'}
+                          required
                           className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           placeholder="MM/YY"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          CVV
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">CVV</label>
                         <input
                           type="text"
                           value={cardInfo.cvv}
                           onChange={(e) => setCardInfo({ ...cardInfo, cvv: e.target.value })}
-                          required={paymentMethod === 'card'}
+                          required
                           className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           placeholder="123"
                         />
@@ -287,16 +304,11 @@ const CheckoutPage: React.FC = () => {
             {/* Order Summary Sidebar */}
             <div className="bg-white rounded-xl shadow-md p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Summary</h3>
-              
-              {/* Items */}
+
               <div className="space-y-3 mb-6">
                 {items.map((item) => (
                   <div key={item.id} className="flex items-center space-x-3">
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-12 h-12 object-cover rounded"
-                    />
+                    <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{item.name}</p>
                       <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
@@ -308,7 +320,6 @@ const CheckoutPage: React.FC = () => {
                 ))}
               </div>
 
-              {/* Totals */}
               <div className="space-y-2 mb-6 border-t pt-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal:</span>
@@ -324,7 +335,6 @@ const CheckoutPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Place Order Button */}
               <button
                 type="submit"
                 disabled={isProcessing}

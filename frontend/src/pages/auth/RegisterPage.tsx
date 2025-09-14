@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, MapPin, Lock, Eye, EyeOff } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import axios from 'axios';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const RegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -17,7 +19,7 @@ const RegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
-  const { register, isLoading } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -42,14 +44,24 @@ const RegisterPage: React.FC = () => {
     }
 
     try {
-      const success = await register(formData);
-      if (success) {
-        navigate('/dashboard');
-      } else {
-        setError('Registration failed. Please try again.');
-      }
-    } catch (err) {
-      setError('Registration failed. Please try again.');
+      setIsLoading(true);
+
+      // Strip confirmPassword before sending to backend
+      const { confirmPassword, ...payload } = formData;
+
+      // POST -> your users route (userController.createUser)
+      // Adjust if your route differs (e.g., /api/auth/register)
+      const { data } = await axios.post(`${API_BASE}/api/users`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      console.log('User created:', data);
+      navigate('/dashboard'); // redirect after successful registration
+    } catch (err: any) {
+      console.error('Registration error:', err?.response?.data || err.message);
+      setError(err?.response?.data?.message || 'Registration failed. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
