@@ -6,7 +6,8 @@ require("dotenv").config();
 // Import Routes
 const orderRoutes = require("./routes/orderRoutes");
 const productRoutes = require("./routes/productRoutes");
-const authRoutes = require("./routes/userRoutes");
+const userRoutes = require("./routes/userRoutes");
+const workoutPlanRoutes = require("./routes/workoutPlanRoutes");
 // (Later you can add: userRoutes, productRoutes, etc.)
 
 const app = express();
@@ -23,6 +24,7 @@ app.get("/", (req, res) => {
 app.use("/api/orders", orderRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/workout-plans", workoutPlanRoutes);
 // Example:
 // app.use("/api/users", userRoutes);
 // app.use("/api/products", productRoutes);
