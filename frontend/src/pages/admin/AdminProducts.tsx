@@ -1,42 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { Search, Plus, Edit, Trash2, Package, AlertTriangle, X } from "lucide-react";
+import { apiClient, Product } from "../../services/api";
 
-type Product = {
-  _id?: string;
-  sku?: string;
-  name: string;
-  category: "protein" | "supplements" | "equipment" | "apparel" | "accessories";
-  price: number;
-  stock: number;
-  lowStockThreshold: number;
-  status: "Active" | "Inactive";
-  sales?: number;
-  images?: string[];
-  description?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
+const CATEGORIES = ["all", "protein", "supplements", "equipment", "apparel", "accessories", "nutrition", "fitness"] as const;
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const api = axios.create({
-  baseURL: `${API_BASE}/api`,
-  headers: { "Content-Type": "application/json" },
-});
-
-const CATEGORIES = ["all", "protein", "supplements", "equipment", "apparel", "accessories"] as const;
-
-const emptyForm: Product = {
+const emptyForm: Partial<Product> = {
   name: "",
   category: "protein",
   price: 0,
   stock: 0,
-  lowStockThreshold: 10,
-  status: "Active",
-  sku: "",
-  sales: 0,
-  images: [],
   description: "",
+  status: "active",
+  visibility: "public",
+  isFeatured: false,
+  isOnSale: false,
 };
 
 const AdminProducts: React.FC = () => {
@@ -48,7 +25,7 @@ const AdminProducts: React.FC = () => {
 
   // modal/edit state
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState<Product>(emptyForm);
+  const [form, setForm] = useState<Partial<Product>>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -57,33 +34,34 @@ const AdminProducts: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const params: Record<string, string> = {};
+      const params: any = {
+        page: 1,
+        limit: 100,
+      };
       if (searchTerm.trim()) params.search = searchTerm.trim();
       if (filterCategory !== "all") params.category = filterCategory;
 
-      const { data } = await api.get("/products", { params });
-      // data could be either {items:[...]} from the controller I gave you, or array.
-      const list: Product[] = Array.isArray(data) ? data : data.items ?? [];
-      setItems(list);
+      const response = await apiClient.getAllProducts(params);
+      setItems(response.items);
     } catch (err: any) {
-      setError(err?.response?.data?.message || "Failed to load products");
+      setError(err?.message || "Failed to load products");
     } finally {
       setLoading(false);
     }
   };
 
-  const createProduct = async (payload: Product) => {
-    const { data } = await api.post("/products", payload);
-    return data as Product;
+  const createProduct = async (payload: Partial<Product>) => {
+    const response = await apiClient.createProduct(payload);
+    return response; // API service returns data directly
   };
 
   const updateProduct = async (id: string, payload: Partial<Product>) => {
-    const { data } = await api.put(`/products/${id}`, payload);
-    return data as Product;
+    const response = await apiClient.updateProduct(id, payload);
+    return response; // API service returns data directly
   };
 
   const deleteProduct = async (id: string) => {
-    await api.delete(`/products/${id}`);
+    await apiClient.deleteProduct(id);
   };
 
   useEffect(() => {
@@ -101,7 +79,7 @@ const AdminProducts: React.FC = () => {
   // ===== Derived stats =====
   const stats = useMemo(() => {
     const totalProducts = items.length;
-    const lowStock = items.filter(p => p.stock <= p.lowStockThreshold).length;
+    const lowStock = items.filter(p => p.stock <= 10).length; // Using default threshold
     const totalValue = items.reduce((sum, p) => sum + (p.price * p.stock), 0);
     const categoriesCount = new Set(items.map(p => p.category)).size;
     return { totalProducts, lowStock, totalValue, categoriesCount };
@@ -119,8 +97,6 @@ const AdminProducts: React.FC = () => {
     setForm({
       ...emptyForm,
       ...p,
-      // ensure category is one of our enums and lowercase for backend
-      category: (p.category?.toLowerCase() as Product["category"]) || "protein",
     });
     setShowModal(true);
   };
@@ -141,17 +117,17 @@ const AdminProducts: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload: Product = {
-        name: form.name.trim(),
-        category: (form.category || "protein").toLowerCase() as Product["category"],
+      const payload: Partial<Product> = {
+        name: form.name?.trim(),
+        category: form.category || "protein",
         price: Number(form.price) || 0,
         stock: Number(form.stock) || 0,
-        lowStockThreshold: Number(form.lowStockThreshold) || 0,
-        status: form.status || "Active",
-        sku: form.sku?.trim() || undefined,
-        sales: Number(form.sales) || 0,
-        images: form.images?.filter(Boolean) ?? [],
-        description: form.description?.trim() || "",
+        status: form.status || "active",
+        sku: form.sku?.trim(),
+        description: form.description?.trim(),
+        visibility: form.visibility || "public",
+        isFeatured: form.isFeatured || false,
+        isOnSale: form.isOnSale || false,
       };
 
       if (editingId) {
@@ -166,7 +142,7 @@ const AdminProducts: React.FC = () => {
       setEditingId(null);
       setForm(emptyForm);
     } catch (err: any) {
-      alert(err?.response?.data?.message || "Failed to save product");
+      alert(err?.message || "Failed to save product");
     } finally {
       setSaving(false);
     }
@@ -285,11 +261,19 @@ const AdminProducts: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
-                          <Package className="h-6 w-6 text-gray-600" />
+                          {product.images && product.images.length > 0 ? (
+                            <img 
+                              src={product.images[0].url} 
+                              alt={product.name}
+                              className="w-full h-full object-cover rounded-lg"
+                            />
+                          ) : (
+                            <Package className="h-6 w-6 text-gray-600" />
+                          )}
                         </div>
                         <div className="ml-3">
                           <p className="text-sm font-medium text-gray-900">{product.name}</p>
-                          <p className="text-sm text-gray-500">ID: {product._id || product.sku || "-"}</p>
+                          <p className="text-sm text-gray-500">SKU: {product.sku || product._id}</p>
                         </div>
                       </div>
                     </td>
@@ -303,21 +287,21 @@ const AdminProducts: React.FC = () => {
                       <div className="flex items-center">
                         <span
                           className={`text-sm font-medium ${
-                            product.stock <= product.lowStockThreshold ? "text-red-600" : "text-gray-900"
+                            product.stock <= 10 ? "text-red-600" : "text-gray-900"
                           }`}
                         >
                           {product.stock}
                         </span>
-                        {product.stock <= product.lowStockThreshold && (
+                        {product.stock <= 10 && (
                           <AlertTriangle className="h-4 w-4 text-red-500 ml-2" />
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{product.sales ?? 0} sold</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{product.sales || 0} sold</td>
                     <td className="px-6 py-4">
                       <span
                         className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-                          product.status === "Active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          product.status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
                         }`}
                       >
                         {product.status}
@@ -414,12 +398,12 @@ const AdminProducts: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value as Product["status"] })}
+                    value={form.status || "active"}
+                    onChange={(e) => setForm({ ...form, status: e.target.value as "active" | "inactive" })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
                   </select>
                 </div>
 
@@ -448,36 +432,39 @@ const AdminProducts: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Low Stock Threshold</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.lowStockThreshold}
-                    onChange={(e) => setForm({ ...form, lowStockThreshold: Number(e.target.value) })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Visibility</label>
+                  <select
+                    value={form.visibility || "public"}
+                    onChange={(e) => setForm({ ...form, visibility: e.target.value as "public" | "private" })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  >
+                    <option value="public">Public</option>
+                    <option value="private">Private</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Sales (optional)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.sales ?? 0}
-                    onChange={(e) => setForm({ ...form, sales: Number(e.target.value) })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Featured Product</label>
+                  <select
+                    value={form.isFeatured ? "true" : "false"}
+                    onChange={(e) => setForm({ ...form, isFeatured: e.target.value === "true" })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
+                  >
+                    <option value="false">No</option>
+                    <option value="true">Yes</option>
+                  </select>
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Main Image URL (optional)</label>
-                  <input
-                    type="url"
-                    value={form.images?.[0] || ""}
-                    onChange={(e) => setForm({ ...form, images: e.target.value ? [e.target.value] : [] })}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">On Sale</label>
+                  <select
+                    value={form.isOnSale ? "true" : "false"}
+                    onChange={(e) => setForm({ ...form, isOnSale: e.target.value === "true" })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="https://example.com/image.jpg"
-                  />
+                  >
+                    <option value="false">No</option>
+                    <option value="true">Yes</option>
+                  </select>
                 </div>
 
                 <div className="md:col-span-2">

@@ -1,104 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Dumbbell, Clock, Users, Star, Download, Calendar, CheckCircle, User } from 'lucide-react'; 
+import { Dumbbell, Clock, Users, Star, Download, Calendar, CheckCircle, User, Loader2 } from 'lucide-react'; 
 import { useAuth } from '../../contexts/AuthContext';
+import { apiClient, WorkoutPlan } from '../../services/api';
 
 const WorkoutPlansPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [plans, setPlans] = useState<WorkoutPlan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filterLevel, setFilterLevel] = useState('all');
 
-  const workoutPlans = [
-    {
-      id: 'beginner-strength',
-      name: 'Beginner Strength',
-      description: 'Perfect for those new to strength training. Focus on form, basic movements, and building a foundation.',
-      duration: '12 weeks',
-      price: 9000,
-      level: 'Beginner',
-      features: [
-        '3 workouts per week',
-        'Video demonstrations',
-        'Progress tracking',
-        'Basic nutrition guide',
-        'Email support'
-      ],
-      trainer: 'Alex Johnson',
-      rating: 4.8,
-      students: 1250,
-      color: 'from-green-500 to-green-600'
-    },
-    {
-      id: 'intermediate-muscle',
-      name: 'Intermediate Muscle Building',
-      description: 'Advanced muscle-building techniques with progressive overload and periodization.',
-      duration: '16 weeks',
-      price: 15000,
-      level: 'Intermediate',
-      features: [
-        '4 workouts per week',
-        'Video demonstrations',
-        'Meal planning guide',
-        'Supplement recommendations',
-        'Weekly check-ins',
-        'Form correction videos'
-      ],
-      trainer: 'Sarah Williams',
-      rating: 4.9,
-      students: 850,
-      color: 'from-blue-500 to-blue-600',
-      popular: true
-    },
-    {
-      id: 'advanced-powerlifting',
-      name: 'Advanced Powerlifting',
-      description: 'Elite powerlifting program for competitive athletes and advanced lifters.',
-      duration: '20 weeks',
-      price: 25000,
-      level: 'Advanced',
-      features: [
-        '5 workouts per week',
-        '1-on-1 coaching sessions',
-        'Competition preparation',
-        'Advanced periodization',
-        'Custom meal plans',
-        'Supplement protocols',
-        'Mental performance coaching'
-      ],
-      trainer: 'Mike Thompson',
-      rating: 5.0,
-      students: 320,
-      color: 'from-purple-500 to-purple-600'
-    },
-    {
-      id: 'fat-loss-intensive',
-      name: 'Fat Loss Intensive',
-      description: 'High-intensity program combining strength training and cardio for rapid fat loss.',
-      duration: '12 weeks',
-      price: 12000,
-      level: 'Intermediate',
-      features: [
-        '5 workouts per week',
-        'HIIT protocols',
-        'Cardio optimization',
-        'Fat loss meal plans',
-        'Body composition tracking',
-        'Metabolic assessments'
-      ],
-      trainer: 'Emma Davis',
-      rating: 4.7,
-      students: 680,
-      color: 'from-orange-500 to-orange-600'
+  // Fetch workout plans from API
+  useEffect(() => {
+    fetchPlans();
+  }, [filterLevel]);
+
+  const fetchPlans = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const params: any = {
+        page: 1,
+        limit: 20,
+      };
+      
+      if (filterLevel !== 'all') {
+        params.level = filterLevel;
+      }
+
+      console.log('Fetching workout plans with params:', params);
+      const response = await apiClient.getWorkoutPlans(params);
+      console.log('Workout plans response:', response);
+      
+      // Ensure we have an array
+      const plansData = response?.data || [];
+      setPlans(plansData);
+    } catch (err: any) {
+      console.error('Error fetching workout plans:', err);
+      setError(err?.message || 'Failed to fetch workout plans');
+      setPlans([]); // Set empty array on error
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  };
 
-  const handleSelectPlan = (planId: string) => {
+  const getLevelColor = (level: string) => {
+    switch (level.toLowerCase()) {
+      case 'beginner':
+        return 'from-green-500 to-green-600';
+      case 'intermediate':
+        return 'from-blue-500 to-blue-600';
+      case 'advanced':
+        return 'from-purple-500 to-purple-600';
+      case 'expert':
+        return 'from-red-500 to-red-600';
+      default:
+        return 'from-gray-500 to-gray-600';
+    }
+  };
+
+  const handleSelectPlan = async (planId: string) => {
     if (!user) {
       navigate('/login');
       return;
     }
-    setSelectedPlan(planId);
-    alert('Plan selected! In a real implementation, this would process the subscription.');
+    
+    try {
+      await apiClient.joinWorkoutPlan(planId);
+      setSelectedPlan(planId);
+      alert('Successfully joined the workout plan!');
+      // Refresh plans to update member count
+      fetchPlans();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to join workout plan');
+    }
   };
 
   return (
@@ -117,110 +96,177 @@ const WorkoutPlansPage: React.FC = () => {
 
         {/* Filter Buttons */}
         <div className="flex flex-wrap justify-center gap-4 mb-12">
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-colors">
+          <button 
+            onClick={() => setFilterLevel('all')}
+            className={`px-6 py-2 rounded-full font-medium transition-colors ${
+              filterLevel === 'all' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
             All Plans
           </button>
-          <button className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-medium hover:bg-gray-300 transition-colors">
+          <button 
+            onClick={() => setFilterLevel('beginner')}
+            className={`px-6 py-2 rounded-full font-medium transition-colors ${
+              filterLevel === 'beginner' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
             Beginner
           </button>
-          <button className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-medium hover:bg-gray-300 transition-colors">
+          <button 
+            onClick={() => setFilterLevel('intermediate')}
+            className={`px-6 py-2 rounded-full font-medium transition-colors ${
+              filterLevel === 'intermediate' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
             Intermediate
           </button>
-          <button className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-medium hover:bg-gray-300 transition-colors">
+          <button 
+            onClick={() => setFilterLevel('advanced')}
+            className={`px-6 py-2 rounded-full font-medium transition-colors ${
+              filterLevel === 'advanced' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
             Advanced
           </button>
         </div>
 
-        {/* Workout Plans Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
-          {workoutPlans.map((plan) => (
-            <div
-              key={plan.id}
-              className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:scale-105 relative"
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600">Loading workout plans...</span>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="text-center py-12">
+            <div className="text-red-500 text-lg mb-2">Error loading workout plans</div>
+            <p className="text-gray-500 mb-4">{error}</p>
+            <button
+              onClick={fetchPlans}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              {plan.popular && (
-                <div className="absolute top-4 right-4 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full text-sm font-semibold z-10">
-                  Most Popular
-                </div>
-              )}
+              Try Again
+            </button>
+          </div>
+        )}
 
-              {/* Plan Header */}
-              <div className={`bg-gradient-to-r ${plan.color} text-white p-8`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-2">
-                    <Dumbbell className="h-6 w-6" />
-                    <span className="bg-white bg-opacity-20 px-2 py-1 rounded text-sm">
-                      {plan.level}
-                    </span>
+        {/* Workout Plans Grid */}
+        {!isLoading && !error && plans && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+            {plans.map((plan) => (
+              <div
+                key={plan._id}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:scale-105 relative"
+              >
+                {plan.isFeatured && (
+                  <div className="absolute top-4 right-4 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full text-sm font-semibold z-10">
+                    Featured
                   </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold">Rs. {plan.price.toLocaleString()}</div>
-                    <div className="text-sm opacity-90">for {plan.duration}</div>
-                  </div>
-                </div>
-                
-                <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
-                <p className="text-blue-100 mb-4">{plan.description}</p>
-                
-                <div className="flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-1">
-                    <Clock className="h-4 w-4" />
-                    <span>{plan.duration}</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Users className="h-4 w-4" />
-                    <span>{plan.students} students</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <Star className="h-4 w-4 fill-current" />
-                    <span>{plan.rating}</span>
-                  </div>
-                </div>
-              </div>
+                )}
 
-              {/* Plan Content */}
-              <div className="p-8">
-                <div className="mb-6">
-                  <h4 className="font-semibold text-gray-900 mb-3">What's Included:</h4>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center text-gray-600">
-                        <CheckCircle className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <User className="h-5 w-5 text-blue-600" />
+                {/* Plan Header */}
+                <div className={`bg-gradient-to-r ${getLevelColor(plan.level)} text-white p-8`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <Dumbbell className="h-6 w-6" />
+                      <span className="bg-white bg-opacity-20 px-2 py-1 rounded text-sm">
+                        {plan.level}
+                      </span>
                     </div>
-                    <div>
-                      <div className="font-medium text-gray-900">{plan.trainer}</div>
-                      <div className="text-sm text-gray-500">Certified Trainer</div>
+                    <div className="text-right">
+                      <div className="text-3xl font-bold">Rs. {plan.price.toLocaleString()}</div>
+                      <div className="text-sm opacity-90">
+                        for {plan.duration.value} {plan.duration.unit}
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    onClick={() => handleSelectPlan(plan.id)}
-                    className={`w-full bg-gradient-to-r ${plan.color} text-white py-3 px-6 rounded-lg font-semibold hover:opacity-90 transition-all duration-200 transform hover:scale-105`}
-                  >
-                    Select This Plan
-                  </button>
                   
-                  <button className="w-full border border-gray-300 text-gray-700 py-3 px-6 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Sample
-                  </button>
+                  <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
+                  <p className="text-blue-100 mb-4">{plan.shortDescription || plan.description}</p>
+                  
+                  <div className="flex items-center space-x-4 text-sm">
+                    <div className="flex items-center space-x-1">
+                      <Clock className="h-4 w-4" />
+                      <span>{plan.duration.value} {plan.duration.unit}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Users className="h-4 w-4" />
+                      <span>{plan.activeMembers} members</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Star className="h-4 w-4 fill-current" />
+                      <span>{plan.averageRating.toFixed(1)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan Content */}
+                <div className="p-8">
+                  <div className="mb-6">
+                    <h4 className="font-semibold text-gray-900 mb-3">What's Included:</h4>
+                    <ul className="space-y-2">
+                      {plan.features?.slice(0, 5).map((feature, index) => (
+                        <li key={index} className="flex items-center text-gray-600">
+                          <CheckCircle className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          {feature.name}
+                        </li>
+                      )) || (
+                        <li className="flex items-center text-gray-600">
+                          <CheckCircle className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          Professional workout sessions
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <User className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{plan.trainerInfo.name}</div>
+                        <div className="text-sm text-gray-500">Certified Trainer</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => handleSelectPlan(plan._id)}
+                      disabled={!plan.isAvailable}
+                      className={`w-full bg-gradient-to-r ${getLevelColor(plan.level)} text-white py-3 px-6 rounded-lg font-semibold hover:opacity-90 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {plan.isAvailable ? 'Join This Plan' : 'Plan Full'}
+                    </button>
+                    
+                    <button className="w-full border border-gray-300 text-gray-700 py-3 px-6 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center justify-center">
+                      <Download className="h-4 w-4 mr-2" />
+                      View Details
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            
+            {plans && plans.length === 0 && (
+              <div className="col-span-2 text-center py-12">
+                <div className="text-gray-400 text-lg mb-2">No workout plans found</div>
+                <p className="text-gray-500">Try adjusting your filter criteria.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Current Plan Section */}
         {user && (

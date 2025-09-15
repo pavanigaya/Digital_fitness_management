@@ -108,13 +108,22 @@ const Header: React.FC = () => {
                       >
                         Profile
                       </Link>
-                      {user.isAdmin && (
+                      {user.role === 'admin' && (
                         <Link
                           to="/admin"
                           className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                           onClick={() => setIsProfileOpen(false)}
                         >
                           Admin Panel
+                        </Link>
+                      )}
+                      {user.role === 'trainer' && (
+                        <Link
+                          to="/trainer"
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setIsProfileOpen(false)}
+                        >
+                          Trainer Panel
                         </Link>
                       )}
                       <button

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, MapPin, Lock, Eye, EyeOff } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { useAuth } from '../../contexts/AuthContext';
 
 const RegisterPage: React.FC = () => {
+  const { register, isLoading, error } = useAuth();
+  const navigate = useNavigate();
+  
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -18,9 +19,6 @@ const RegisterPage: React.FC = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
@@ -31,37 +29,23 @@ const RegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      alert('Passwords do not match');
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+      alert('Password must be at least 6 characters');
       return;
     }
 
-    try {
-      setIsLoading(true);
+    // Strip confirmPassword before sending to backend
+    const { confirmPassword, ...payload } = formData;
 
-      // Strip confirmPassword before sending to backend
-      const { confirmPassword, ...payload } = formData;
-
-      // POST -> your users route (userController.createUser)
-      // Adjust if your route differs (e.g., /api/auth/register)
-      const { data } = await axios.post(`${API_BASE}/api/users`, payload, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      console.log('User created:', data);
-      navigate('/dashboard'); // redirect after successful registration
-    } catch (err: any) {
-      console.error('Registration error:', err?.response?.data || err.message);
-      setError(err?.response?.data?.message || 'Registration failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+    const success = await register(payload);
+    if (success) {
+      navigate('/dashboard');
     }
   };
 

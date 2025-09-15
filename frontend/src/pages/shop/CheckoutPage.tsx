@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { CreditCard, Truck, Lock, CheckCircle } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { apiClient } from '../../services/api';
 
 const CheckoutPage: React.FC = () => {
   const { items, getTotalPrice, clearCart } = useCart();
@@ -21,9 +19,11 @@ const CheckoutPage: React.FC = () => {
     fullName: (user?.firstName ? `${user.firstName} ${user?.lastName ?? ''}`.trim() : '') || '',
     email: user?.email || '',
     phone: user?.phone || '',
-    address: user?.address || '',
+    address: '',
     city: 'Colombo',
-    postalCode: ''
+    state: 'Western Province',
+    postalCode: '',
+    country: 'Sri Lanka'
   });
 
   const [cardInfo, setCardInfo] = useState({
@@ -42,40 +42,38 @@ const CheckoutPage: React.FC = () => {
     setErrorMsg(null);
 
     try {
-      // Build payload expected by your /api/orders POST
-      const payload = {
-        user: (user as any)?._id || null, // keep null if your schema made 'user' optional
-        items: items.map(it => ({
-          productId: it.id,
-          name: it.name,
-          image: it.image,
-          category: it.category,
-          price: it.price,
-          quantity: it.quantity
+      // Build payload for the API
+      const orderData = {
+        items: items.map(item => ({
+          product: item.id,
+          name: item.name,
+          sku: item.sku || '',
+          image: item.image || '',
+          category: item.category || '',
+          price: item.price,
+          quantity: item.quantity,
+          totalPrice: item.price * item.quantity
         })),
         shippingInfo,
-        paymentMethod,
-        totalPrice: total
+        billingInfo: shippingInfo, // Use same as shipping for now
+        paymentMethod: paymentMethod === 'card' ? 'card' : 'cash',
+        notes: paymentMethod === 'card' ? `Card ending in ${cardInfo.cardNumber.slice(-4)}` : 'Cash on delivery',
+        isGift: false,
+        giftMessage: '',
+        totalPrice: items.reduce((total, item) => total + (item.price * item.quantity), 0)
       };
 
-      const res = await axios.post(`${API_BASE}/api/orders`, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        withCredentials: false
-      });
+      const response = await apiClient.createOrder(orderData);
 
       // Success → show success UI, clear cart, redirect
-      console.log('Order saved:', res.data);
+      console.log('Order created:', response.data);
       setOrderComplete(true);
       clearCart();
       setTimeout(() => navigate('/dashboard'), 3000);
     } catch (err: any) {
-      const apiMsg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Failed to place order.';
+      const apiMsg = err?.message || 'Failed to place order.';
       setErrorMsg(apiMsg);
-      console.error('Order failed:', err?.response?.data || err);
+      console.error('Order failed:', err);
     } finally {
       setIsProcessing(false);
     }

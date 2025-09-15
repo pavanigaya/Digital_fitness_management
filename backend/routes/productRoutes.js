@@ -3,30 +3,46 @@ const {
   createProduct,
   getProducts,
   getProductById,
+  getProductBySlug,
   updateProduct,
   deleteProduct,
   getLowStock,
   bulkUpdateStock,
+  addReview,
+  getFeaturedProducts,
+  getProductsOnSale,
+  searchProducts,
+  updateStock,
+  getProductAnalytics,
 } = require("../Controllers/productController");
+const { protect, requireAdmin, optionalAuth } = require("../middleware/auth");
+const { validateProduct, validateObjectId, validatePagination } = require("../middleware/validation");
 
 const router = express.Router();
 
-// (Optional) simple admin guard placeholder
-// Replace with real auth middleware when you add auth/JWT
-const requireAdmin = (req, res, next) => {
-  // Example: if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Forbidden' });
-  next();
-};
+// Public routes
+router.get("/", validatePagination, getProducts);
+router.get("/search", searchProducts);
+router.get("/featured", getFeaturedProducts);
+router.get("/on-sale", getProductsOnSale);
+router.get("/slug/:slug", getProductBySlug);
+// This route must be last to avoid matching other routes
+router.get("/:id", validateObjectId, getProductById);
 
-// CRUD
-router.post("/", requireAdmin, createProduct);
-router.get("/", getProducts);
-router.get("/low-stock", requireAdmin, getLowStock);
-router.get("/:id", getProductById);
-router.put("/:id", requireAdmin, updateProduct);
-router.delete("/:id", requireAdmin, deleteProduct);
+// Protected routes (authenticated users)
+router.use(protect);
 
-// Bulk stock updates
-router.put("/bulk/stock", requireAdmin, bulkUpdateStock);
+router.post("/:productId/reviews", addReview); // Add product review
+router.get("/:productId/analytics", getProductAnalytics); // Get product analytics
+
+// Admin routes
+router.use(requireAdmin);
+
+router.post("/", validateProduct, createProduct);
+router.get("/low-stock", getLowStock);
+router.put("/:id", validateObjectId, validateProduct, updateProduct);
+router.put("/:productId/stock", validateObjectId, updateStock); // Update individual product stock
+router.put("/bulk/stock", bulkUpdateStock);
+router.delete("/:id", validateObjectId, deleteProduct);
 
 module.exports = router;

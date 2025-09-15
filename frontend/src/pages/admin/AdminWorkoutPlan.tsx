@@ -1,32 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
 import { Search, Plus, Edit, Trash2, Dumbbell, Users, Clock, Star, X } from 'lucide-react';
+import { apiClient, WorkoutPlan } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
-type PlanLevel = 'Beginner' | 'Intermediate' | 'Advanced';
-type PlanStatus = 'Active' | 'Inactive';
+type PlanLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert';
+type PlanStatus = 'active' | 'inactive' | 'draft' | 'archived';
 
-interface WorkoutPlan {
-  _id: string;
-  name: string;
-  description: string;
-  duration: string;         // e.g. "12 weeks"
-  price: number;
-  level: PlanLevel;
-  trainer: string;
-  rating: number;
-  activeMembers: number;
-  status: PlanStatus;
-  features?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-}
 
-const API = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:5000',
-  withCredentials: false,
-});
+// Using apiClient from services instead of direct axios
 
 const AdminWorkoutPlans: React.FC = () => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -41,8 +25,7 @@ const AdminWorkoutPlans: React.FC = () => {
     description: '',
     duration: '',
     price: '',
-    level: 'Beginner' as PlanLevel,
-    trainer: '',
+    level: 'beginner' as PlanLevel,
     features: '' // comma separated
   });
 
@@ -53,29 +36,29 @@ const AdminWorkoutPlans: React.FC = () => {
     duration: string;
     price: string;
     level: PlanLevel;
-    trainer: string;
     features: string;
     status: PlanStatus;
   } | null>(null);
 
   // ===== Helpers =====
   const levelColors: Record<PlanLevel, string> = {
-    Beginner: 'bg-green-100 text-green-800',
-    Intermediate: 'bg-blue-100 text-blue-800',
-    Advanced: 'bg-purple-100 text-purple-800'
+    beginner: 'bg-green-100 text-green-800',
+    intermediate: 'bg-blue-100 text-blue-800',
+    advanced: 'bg-purple-100 text-purple-800',
+    expert: 'bg-red-100 text-red-800'
   };
 
   const fetchPlans = async () => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await API.get('/api/workout-plans', {
-        params: { search: searchTerm.trim() || undefined, limit: 100 }
+      const response = await apiClient.getWorkoutPlans({
+        limit: 100
       });
-      const list: WorkoutPlan[] = data?.data || data; // supports both paginated and array responses
+      const list = (response.data || []) as unknown as WorkoutPlan[]; // apiClient returns { data: WorkoutPlan[] }
       setWorkoutPlans(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      setError(e?.response?.data?.message || e.message || 'Failed to load plans');
+      setError(e?.message || 'Failed to load plans');
     } finally {
       setLoading(false);
     }
@@ -89,7 +72,7 @@ const AdminWorkoutPlans: React.FC = () => {
   const filteredPlans = useMemo(() => {
     const q = searchTerm.toLowerCase();
     return workoutPlans.filter((p) =>
-      p.name.toLowerCase().includes(q) || p.trainer.toLowerCase().includes(q)
+      p.name.toLowerCase().includes(q) || p.trainerInfo?.name?.toLowerCase().includes(q)
     );
   }, [workoutPlans, searchTerm]);
 
@@ -99,7 +82,7 @@ const AdminWorkoutPlans: React.FC = () => {
   );
   const avgRating = useMemo(
     () => (workoutPlans.length
-      ? (workoutPlans.reduce((s, p) => s + (p.rating || 0), 0) / workoutPlans.length).toFixed(1)
+      ? (workoutPlans.reduce((s, p) => s + (p.averageRating || 0), 0) / workoutPlans.length).toFixed(1)
       : '0.0'),
     [workoutPlans]
   );
@@ -111,36 +94,66 @@ const AdminWorkoutPlans: React.FC = () => {
     setError('');
 
     try {
+      // Parse duration string (e.g., "4 weeks" -> { value: 4, unit: "weeks" })
+      const durationMatch = newPlan.duration.trim().match(/^(\d+)\s*(days?|weeks?|months?)$/i);
+      if (!durationMatch) {
+        throw new Error('Duration must be in format like "4 weeks", "30 days", or "2 months"');
+      }
+      
+      const durationValue = parseInt(durationMatch[1]);
+      const durationUnit = durationMatch[2].toLowerCase().replace(/s$/, ''); // Remove trailing 's'
+      const finalUnit = durationUnit === 'day' ? 'days' : 
+                       durationUnit === 'week' ? 'weeks' : 
+                       durationUnit === 'month' ? 'months' : durationUnit;
+
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      console.log('User object:', user);
+
       const payload = {
         name: newPlan.name.trim(),
         description: newPlan.description.trim(),
-        duration: newPlan.duration.trim(),
+        duration: {
+          value: durationValue,
+          unit: finalUnit as 'days' | 'weeks' | 'months'
+        },
         price: Number(newPlan.price),
-        level: newPlan.level,
-        trainer: newPlan.trainer.trim(),
+        level: newPlan.level as 'beginner' | 'intermediate' | 'advanced' | 'expert',
+        category: 'general-fitness', // Default category, can be made configurable
+        trainer: user._id as any,
+        trainerInfo: {
+          name: `${user.firstName} ${user.lastName}`,
+          bio: '',
+          certifications: [],
+          experience: 0
+        },
         features: newPlan.features
-          ? newPlan.features.split(',').map(f => f.trim()).filter(Boolean)
+          ? newPlan.features.split(',').map(f => ({
+              name: f.trim(),
+              description: '',
+              included: true
+            })).filter(f => f.name)
           : [],
-        rating: 0,
-        activeMembers: 0,
-        status: 'Active' as PlanStatus
+        activeMembers: 0
       };
 
-      const { data } = await API.post('/api/workout-plans', payload);
-      setWorkoutPlans((prev) => [data, ...prev]);
+      console.log('Sending payload:', JSON.stringify(payload, null, 2));
+      const response = await apiClient.createWorkoutPlan(payload);
+      setWorkoutPlans((prev) => [response.data, ...prev]);
       setNewPlan({
         name: '',
         description: '',
         duration: '',
         price: '',
-        level: 'Beginner',
-        trainer: '',
+        level: 'beginner',
         features: ''
       });
       setShowAddModal(false);
       alert('Workout plan added successfully!');
     } catch (e: any) {
-      setError(e?.response?.data?.message || e.message || 'Failed to add plan');
+      setError(e?.message || 'Failed to add plan');
     } finally {
       setSubmitting(false);
     }
@@ -152,11 +165,11 @@ const AdminWorkoutPlans: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      await API.delete(`/api/workout-plans/${id}`);
+      await apiClient.deleteWorkoutPlan(id);
       setWorkoutPlans((prev) => prev.filter((p) => p._id !== id));
       alert('Workout plan deleted successfully!');
     } catch (e: any) {
-      setError(e?.response?.data?.message || e.message || 'Failed to delete plan');
+      setError(e?.message || 'Failed to delete plan');
     } finally {
       setSubmitting(false);
     }
@@ -168,12 +181,11 @@ const AdminWorkoutPlans: React.FC = () => {
       _id: plan._id,
       name: plan.name,
       description: plan.description,
-      duration: plan.duration,
+      duration: `${plan.duration.value} ${plan.duration.unit}`,
       price: String(plan.price),
       level: plan.level,
-      trainer: plan.trainer,
-      features: (plan.features || []).join(', '),
-      status: plan.status
+      features: '', // Features not available in API type
+      status: 'active' as PlanStatus
     });
     setShowEditModal(true);
   };
@@ -187,26 +199,43 @@ const AdminWorkoutPlans: React.FC = () => {
     setError('');
 
     try {
+      // Parse duration string (e.g., "4 weeks" -> { value: 4, unit: "weeks" })
+      const durationMatch = editPlan.duration.trim().match(/^(\d+)\s*(days?|weeks?|months?)$/i);
+      if (!durationMatch) {
+        throw new Error('Duration must be in format like "4 weeks", "30 days", or "2 months"');
+      }
+      
+      const durationValue = parseInt(durationMatch[1]);
+      const durationUnit = durationMatch[2].toLowerCase().replace(/s$/, ''); // Remove trailing 's'
+      const finalUnit = durationUnit === 'day' ? 'days' : 
+                       durationUnit === 'week' ? 'weeks' : 
+                       durationUnit === 'month' ? 'months' : durationUnit;
+
       const payload = {
         name: editPlan.name.trim(),
         description: editPlan.description.trim(),
-        duration: editPlan.duration.trim(),
+        duration: {
+          value: durationValue,
+          unit: finalUnit as 'days' | 'weeks' | 'months'
+        },
         price: Number(editPlan.price),
-        level: editPlan.level,
-        trainer: editPlan.trainer.trim(),
-        status: editPlan.status,
+        level: editPlan.level as 'beginner' | 'intermediate' | 'advanced' | 'expert',
         features: editPlan.features
-          ? editPlan.features.split(',').map(f => f.trim()).filter(Boolean)
+          ? editPlan.features.split(',').map(f => ({
+              name: f.trim(),
+              description: '',
+              included: true
+            })).filter(f => f.name)
           : []
       };
 
-      const { data } = await API.put(`/api/workout-plans/${editPlan._id}`, payload);
-      setWorkoutPlans((prev) => prev.map((p) => (p._id === data._id ? data : p)));
+      const response = await apiClient.updateWorkoutPlan(editPlan._id, payload);
+      setWorkoutPlans((prev) => prev.map((p) => (p._id === response.data._id ? response.data : p)));
       setShowEditModal(false);
       setEditPlan(null);
       alert('Workout plan updated!');
     } catch (e: any) {
-      setError(e?.response?.data?.message || e.message || 'Failed to update plan');
+      setError(e?.message || 'Failed to update plan');
     } finally {
       setSubmitting(false);
     }
@@ -324,19 +353,19 @@ const AdminWorkoutPlans: React.FC = () => {
                       <p className="text-sm text-gray-500 truncate max-w-xs">{plan.description}</p>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{plan.trainer}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{plan.trainerInfo?.name || 'Unknown'}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${levelColors[plan.level]}`}>
                       {plan.level}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{plan.duration}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{plan.duration.value} {plan.duration.unit}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">Rs. {plan.price.toLocaleString()}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{plan.activeMembers}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center">
                       <Star className="h-4 w-4 text-yellow-400 fill-current mr-1" />
-                      <span className="text-sm text-gray-600">{plan.rating}</span>
+                      <span className="text-sm text-gray-600">{plan.averageRating}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -399,17 +428,6 @@ const AdminWorkoutPlans: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Trainer</label>
-                  <input
-                    type="text"
-                    value={newPlan.trainer}
-                    onChange={(e) => setNewPlan({ ...newPlan, trainer: e.target.value })}
-                    required
-                    className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., John Smith"
-                  />
-                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Level</label>
@@ -418,9 +436,10 @@ const AdminWorkoutPlans: React.FC = () => {
                     onChange={(e) => setNewPlan({ ...newPlan, level: e.target.value as PlanLevel })}
                     className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                    <option value="expert">Expert</option>
                   </select>
                 </div>
 
@@ -517,16 +536,6 @@ const AdminWorkoutPlans: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Trainer</label>
-                  <input
-                    type="text"
-                    value={editPlan.trainer}
-                    onChange={(e) => setEditPlan({ ...editPlan, trainer: e.target.value })}
-                    required
-                    className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Level</label>
@@ -535,9 +544,10 @@ const AdminWorkoutPlans: React.FC = () => {
                     onChange={(e) => setEditPlan({ ...editPlan, level: e.target.value as PlanLevel })}
                     className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                    <option value="expert">Expert</option>
                   </select>
                 </div>
 
@@ -570,8 +580,10 @@ const AdminWorkoutPlans: React.FC = () => {
                     onChange={(e) => setEditPlan({ ...editPlan, status: e.target.value as PlanStatus })}
                     className="block w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
                   </select>
                 </div>
 
