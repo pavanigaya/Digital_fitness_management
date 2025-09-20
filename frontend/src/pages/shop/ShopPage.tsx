@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, ShoppingCart, Star, Grid, List, Loader2 } from 'lucide-react';
+import { Search, ShoppingCart, Star, Grid, List, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../../contexts/CartContext';
 import { apiClient, Product } from '../../services/api';
+
+// Adjusted ApiResponse Type
+type ApiResponse<T> = {
+  items: T[];
+  totalPages: number;
+  total: number;
+};
 
 const ShopPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,17 +60,13 @@ const ShopPage: React.FC = () => {
         params.q = searchTerm.trim();
       }
 
-      const response = await apiClient.searchProducts(params);
-      console.log('Products API response:', response);
-      
-      // The API service returns data directly, not wrapped in response.data
+      // Ensure the response is of type ApiResponse<Product>
+      const response: ApiResponse<Product> = await apiClient.searchProducts(params);
+
+      // Handle API response
       if (response && response.items) {
         setProducts(response.items);
         setTotalPages(response.totalPages);
-      } else if (response && Array.isArray(response)) {
-        // Fallback if response is directly an array
-        setProducts(response);
-        setTotalPages(1);
       } else {
         console.error('Unexpected response structure:', response);
         setProducts([]);
@@ -201,9 +204,7 @@ const ShopPage: React.FC = () => {
               {products.map((product) => (
                 <div
                   key={product._id}
-                  className={`bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 ${
-                    viewMode === 'list' ? 'flex' : ''
-                  }`}
+                  className={`bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 ${viewMode === 'list' ? 'flex' : ''}`}
                 >
                   <div className={`${viewMode === 'list' ? 'w-48 flex-shrink-0' : ''}`}>
                     <div className="relative">

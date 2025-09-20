@@ -9,6 +9,7 @@ const {
 
 const router = express.Router();
 
+
 router.use(protect);
 
 router.get("/", requireAdmin, getUsers);           // admin list
